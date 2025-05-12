@@ -17,7 +17,7 @@ import { Sexp, Token } from "s-expression";
 ;; - Pair datatype
 ;; - The empty-list literal expression
 ;; - Compound literal expressions denoted with quote
-;; - Primitives: cons, car, cdr, pair?, number?, boolean?, symbol?, string?, list
+;; - Primitives: cons, car, cdr, pair?, number?, boolean?, symbol?, string?, list, dict, get, dict?
 ;; - Primitives: and, or, not
 ;; - The Let abbreviation is also supported.
 
@@ -36,7 +36,7 @@ import { Sexp, Token } from "s-expression";
 ;; <binding>  ::= ( <var> <cexp> )           / Binding(var:VarDecl, val:Cexp)
 ;; <prim-op>  ::= + | - | * | / | < | > | = | not |  and | or | eq? | string=?
 ;;                  | cons | car | cdr | pair? | number? | list 
-;;                  | boolean? | symbol? | string?      ##### L3
+;;                  | boolean? | symbol? | string? | dict | get | dict?     ##### L3
 ;; <num-exp>  ::= a number token
 ;; <bool-exp> ::= #t | #f
 ;; <var-ref>  ::= an identifier token
@@ -202,12 +202,12 @@ export const parseL31Atomic = (token: Token): Result<CExp> =>
 /*
     ;; <prim-op>  ::= + | - | * | / | < | > | = | not | and | or | eq? | string=?
     ;;                  | cons | car | cdr | pair? | number? | list
-    ;;                  | boolean? | symbol? | string?      ##### L3
+    ;;                  | boolean? | symbol? | string? | dict | get | dict?     ##### L3
 */
 const isPrimitiveOp = (x: string): boolean =>
     ["+", "-", "*", "/", ">", "<", "=", "not", "and", "or",
      "eq?", "string=?", "cons", "car", "cdr", "list", "pair?",
-     "number?", "boolean?", "symbol?", "string?"].includes(x);
+     "number?", "boolean?", "symbol?", "string?", "dict", "get", "dict?"].includes(x);
 
 const isSpecialForm = (x: string): boolean =>
     ["if", "lambda", "let", "quote"].includes(x);
