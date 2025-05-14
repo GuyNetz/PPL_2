@@ -1,0 +1,67 @@
+(define dict
+  (lambda (pairs-list)
+    pairs-list))
+
+(define get
+  (lambda (dict-list key)
+    (if (not (is-list? dict-list))
+        (make-error "Error: Argument is not a dictionary representation")
+        (get-loop dict-list key))))
+
+(define dict?
+  (lambda (arg)
+    (if (is-list? arg)
+        (check-all-pairs arg)
+        #f)))
+
+(define make-error
+  (lambda (message)
+    (list 'error message)))
+
+(define is-error?
+  (lambda (arg)
+    (if (pair? arg)
+        ((lambda (first-element)
+           (if (symbol? first-element)
+               (eq? first-element 'error)
+               #f))
+         (car arg))
+        #f)))
+
+(define bind
+  (lambda (result proc)
+    (if (is-error? result)
+        result
+        (proc result))))
+
+(define get-loop
+  (lambda (current-list key)
+    (if (eq? current-list '())
+        (make-error "Error: Key not found")
+        ((lambda (pair)
+           (if (not (pair? pair))
+               (make-error "Error: Invalid dictionary format: element is not a pair")
+               ((lambda (current-key current-value)
+                  (if (eq? current-key key)
+                      current-value
+                      (get-loop (cdr current-list) key)))
+                (car pair)
+                (cdr pair))))
+         (car current-list)))))
+
+(define check-all-pairs
+  (lambda (lst)
+    (if (eq? lst '())
+        #t
+        (if (and (pair? (car lst))
+                 (symbol? (car (car lst))))
+            (check-all-pairs (cdr lst))
+            #f))))
+
+(define is-list?
+  (lambda (arg)
+    (if (eq? arg '())
+        #t
+        (if (pair? arg)
+            (is-list? (cdr arg))
+            #f))))
