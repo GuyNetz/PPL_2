@@ -1,6 +1,6 @@
 import { reduce } from "ramda";
 import { PrimOp } from "./L32-ast";
-import { isCompoundSExp, isEmptySExp, isSymbolSExp, makeCompoundSExp, makeEmptySExp, CompoundSExp, EmptySExp, Value } from "./L32-value";
+import { isCompoundSExp,SExpValue, isEmptySExp, isSymbolSExp, makeCompoundSExp, makeEmptySExp, CompoundSExp,isSExp, EmptySExp, Value } from "./L32-value";
 import { List, allT, first, isNonEmptyList, rest } from '../shared/list';
 import { isBoolean, isNumber, isString } from "../shared/type-predicates";
 import { Result, makeOk, makeFailure } from "../shared/result";
@@ -23,10 +23,14 @@ export const applyPrimitive = (proc: PrimOp, args: Value[]): Result<Value> =>
                                                                   makeFailure(`Arguments to "or" not booleans: ${format(args)}`) :
     proc.op === "eq?" ? makeOk(eqPrim(args)) :
     proc.op === "string=?" ? makeOk(args[0] === args[1]) :
-    proc.op === "cons" ? makeOk(consPrim(args[0], args[1])) :
+    proc.op === "cons" ?
+        args.length === 2 && isSExp(args[0]) && isSExp(args[1]) ? makeOk(consPrim(args[0], args[1])) : 
+        makeFailure(`cons expects 2 SExpValue arguments: ${format(args)}`) :
     proc.op === "car" ? carPrim(args[0]) :
-    proc.op === "cdr" ? cdrPrim(args[0]) :
-    proc.op === "list" ? makeOk(listPrim(args)) :
+    proc.op === "cdr" ? cdrPrim(args[1]) :
+    proc.op === "list" ?
+        allT(isSExp, args) ? makeOk(listPrim(args)) : // ודא שכל הארגומנטים הם SExpValue [1]
+        makeFailure(`list expects SExpValue arguments: ${format(args)}`) :
     proc.op === "pair?" ? makeOk(isPairPrim(args[0])) :
     proc.op === "number?" ? makeOk(typeof (args[0]) === 'number') :
     proc.op === "boolean?" ? makeOk(typeof (args[0]) === 'boolean') :
@@ -86,11 +90,11 @@ const cdrPrim = (v: Value): Result<Value> =>
     isCompoundSExp(v) ? makeOk(v.val2) :
     makeFailure(`Cdr: param is not compound ${format(v)}`);
 
-const consPrim = (v1: Value, v2: Value): CompoundSExp =>
+const consPrim = (v1: SExpValue, v2: SExpValue): CompoundSExp =>
     makeCompoundSExp(v1, v2);
 
-export const listPrim = (vals: List<Value>): EmptySExp | CompoundSExp =>
-    isNonEmptyList<Value>(vals) ? makeCompoundSExp(first(vals), listPrim(rest(vals))) :
+export const listPrim = (vals: List<SExpValue>): EmptySExp | CompoundSExp =>
+    isNonEmptyList<SExpValue>(vals) ? makeCompoundSExp(first(vals), listPrim(rest(vals))) :
     makeEmptySExp();
 
 const isPairPrim = (v: Value): boolean =>

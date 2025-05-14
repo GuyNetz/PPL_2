@@ -2,7 +2,7 @@
 // AST type models
 import { map, zipWith } from "ramda";
 import { makeEmptySExp, makeSymbolSExp, SExpValue, makeCompoundSExp, valueToString } from './L32-value'
-import { first, second, rest, allT, isEmpty, isNonEmptyList, List, NonEmptyList } from "../shared/list";
+import { first, second, rest, allT, isEmpty, isNonEmptyList, List, NonEmptyList, cons } from "../shared/list";
 import { isArray, isString, isNumericString, isIdentifier } from "../shared/type-predicates";
 import { Result, makeOk, makeFailure, bind, mapResult, mapv } from "../shared/result";
 import { parse as p, isSexpString, isToken, isCompoundSexp } from "../shared/parser";
@@ -25,10 +25,12 @@ import { Sexp, Token } from "s-expression";
 ;; <exp> ::= <define> | <cexp>              / DefExp | CExp
 ;; <define> ::= ( define <var> <cexp> )     / DefExp(var:VarDecl, val:CExp)
 ;; <var> ::= <identifier>                   / VarRef(var:string)
+;; <dict-pair> ::= (<identifier> <cexp>)    / DictPair(key:VarDecl, val:CExp)
 ;; <cexp> ::= <number>                      / NumExp(val:number)
 ;;         |  <boolean>                     / BoolExp(val:boolean)
 ;;         |  <string>                      / StrExp(val:string)
 ;;         |  ( lambda ( <var>* ) <cexp>+ ) / ProcExp(args:VarDecl[], body:CExp[]))
+;;         |  ( dict  <dict-pair>*)		    / DictExp(pairs:dict-pair[])
 ;;         |  ( if <cexp> <cexp> <cexp> )   / IfExp(test: CExp, then: CExp, alt: CExp)
 ;;         |  ( let ( binding* ) <cexp>+ )  / LetExp(bindings:Binding[], body:CExp[]))
 ;;         |  ( quote <sexp> )              / LitExp(val:SExp)
@@ -47,7 +49,7 @@ import { Sexp, Token } from "s-expression";
 
 export type Exp = DefineExp | CExp;
 export type AtomicExp = NumExp | BoolExp | StrExp | PrimOp | VarRef;
-export type CompoundExp = AppExp | IfExp | ProcExp | LetExp | LitExp;
+export type CompoundExp = AppExp | IfExp | ProcExp | LetExp | LitExp | DictExp;
 export type CExp =  AtomicExp | CompoundExp;
 
 export type Program = {tag: "Program"; exps: Exp[]; }
@@ -66,6 +68,10 @@ export type Binding = {tag: "Binding"; var: VarDecl; val: CExp; }
 export type LetExp = {tag: "LetExp"; bindings: Binding[]; body: CExp[]; }
 // L3
 export type LitExp = {tag: "LitExp"; val: SExpValue; }
+// added types for Dict implementation
+export type DictPair = {tag: "DictPair", key: VarDecl, val: CExp; }
+export type DictExp = {tag: "DictExp", pairs:DictPair[]; }
+
 
 // Type value constructors for disjoint types
 export const makeProgram = (exps: Exp[]): Program => ({tag: "Program", exps: exps});
@@ -92,6 +98,13 @@ export const makeLetExp = (bindings: Binding[], body: CExp[]): LetExp =>
 export const makeLitExp = (val: SExpValue): LitExp =>
     ({tag: "LitExp", val: val});
 
+// added constructors for Dict implementation
+export const makeDictPair = (key: string, val: CExp): DictPair =>
+    ({tag: "DictPair", key: makeVarDecl(key), val: val});
+
+export const makeDictExp = (pairs: DictPair[]): DictExp =>
+    ({tag: "DictExp", pairs: pairs});
+
 // Type predicates for disjoint types
 export const isProgram = (x: any): x is Program => x.tag === "Program";
 export const isDefineExp = (x: any): x is DefineExp => x.tag === "DefineExp";
@@ -111,13 +124,17 @@ export const isLetExp = (x: any): x is LetExp => x.tag === "LetExp";
 // L3
 export const isLitExp = (x: any): x is LitExp => x.tag === "LitExp";
 
+// added type predicates for Dict implementation
+export const isDictPair = (x: any): x is DictPair => x.tag === "DictPair";
+export const isDictExp = (x: any): x is DictExp => x.tag === "DictExp";
+
 // Type predicates for type unions
 export const isExp = (x: any): x is Exp => isDefineExp(x) || isCExp(x);
 export const isAtomicExp = (x: any): x is AtomicExp =>
     isNumExp(x) || isBoolExp(x) || isStrExp(x) ||
     isPrimOp(x) || isVarRef(x);
 export const isCompoundExp = (x: any): x is CompoundExp =>
-    isAppExp(x) || isIfExp(x) || isProcExp(x) || isLitExp(x) || isLetExp(x);
+    isAppExp(x) || isIfExp(x) || isProcExp(x) || isLitExp(x) || isLetExp(x) || isDictExp(x);
 export const isCExp = (x: any): x is CExp =>
     isAtomicExp(x) || isCompoundExp(x);
 
@@ -168,8 +185,48 @@ export const parseL32SpecialForm = (op: Sexp, params: Sexp[]): Result<CExp> =>
     op === "quote" ? 
         isNonEmptyList<Sexp>(params) ? parseLitExp(first(params)) :
         makeFailure(`Bad quote exp: ${params}`) :
+    op === "dict" ? 
+        isNonEmptyList<Sexp>(params) ? parseDictExp(params) :
+        makeFailure(`Bad dict exp: ${params}`) :   
     makeFailure("Never");
 
+
+export const parseDictExp = (params: Sexp[]): Result<DictExp> => {
+    // We need to parse each Sexp in params as a DictPair
+    const parsedPairs: Result<DictPair[]> = mapResult(parseDictPair, params);
+
+    // If parsing all pairs is successful, create the DictExp node
+    return bind(parsedPairs, (pairs: DictPair[]) => {
+        return makeOk(makeDictExp(pairs));
+    });
+};
+
+const parseDictPair = (pairSexp: Sexp): Result<DictPair> => {
+    // Check if the pairSexp is a non-empty list
+    if (!isNonEmptyList(pairSexp)) {
+        return makeFailure(`Malformed dict entry (expected list): ${format(pairSexp)}`);
+    }
+    const pair = pairSexp as Sexp[]; // Cast after checking it's a list
+
+    // Check if the list has exactly two elements
+    if (pair.length !== 2) {
+        return makeFailure(`Malformed dict entry (expected 2 elements): ${format(pairSexp)}`);
+    }
+
+    const keySexp = pair[0]; 
+    const valueSexp = pair[1]; 
+
+    if (!isIdentifier(keySexp)) { // Assuming isIdentifier checks for string that is valid identifier
+        return makeFailure(`Malformed dict pair key (expected identifier): ${format(keySexp)}`);
+    }
+    const key = keySexp; // The key is the identifier string
+
+    return bind(parseL32CExp(valueSexp), (valCExp: CExp) => {
+        // If value parsing is successful, create the DictPair
+        return makeOk(makeDictPair(key, valCExp));
+    });
+};
+    
 // DefineExp -> (define <varDecl> <CExp>)
 export const parseDefine = (params: List<Sexp>): Result<DefineExp> =>
     isNonEmptyList<Sexp>(params) ? 
@@ -210,7 +267,7 @@ const isPrimitiveOp = (x: string): boolean =>
      "number?", "boolean?", "symbol?", "string?"].includes(x);
 
 const isSpecialForm = (x: string): boolean =>
-    ["if", "lambda", "let", "quote"].includes(x);
+    ["if", "lambda", "let", "quote", "dict"].includes(x);
 
 const parseAppExp = (op: Sexp, params: Sexp[]): Result<AppExp> =>
     bind(parseL32CExp(op), (rator: CExp) => 
@@ -302,6 +359,18 @@ const unparseProcExp = (pe: ProcExp): string =>
 const unparseLetExp = (le: LetExp) : string => 
     `(let (${map((b: Binding) => `(${b.var.var} ${unparseL32(b.val)})`, le.bindings).join(" ")}) ${unparseLExps(le.body)})`
 
+const unparseDictExp = (exp: DictExp): string => {
+  const pairsString = map(
+    (pair: DictPair) => {
+      const keyString = pair.key.var;
+      const valString = unparseL32(pair.val);
+      return `(${keyString} ${valString})`;
+    },
+    exp.pairs 
+  ).join(" ");
+  return `(dict ${pairsString})`;
+};
+
 export const unparseL32 = (exp: Program | Exp): string =>
     isBoolExp(exp) ? valueToString(exp.val) :
     isNumExp(exp) ? valueToString(exp.val) :
@@ -315,4 +384,5 @@ export const unparseL32 = (exp: Program | Exp): string =>
     isLetExp(exp) ? unparseLetExp(exp) :
     isDefineExp(exp) ? `(define ${exp.var.var} ${unparseL32(exp.val)})` :
     isProgram(exp) ? `(L32 ${unparseLExps(exp.exps)})` :
+    isDictExp(exp) ? unparseDictExp(exp) :
     exp;

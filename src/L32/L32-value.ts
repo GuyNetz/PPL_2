@@ -5,7 +5,9 @@ import { isPrimOp, CExp, PrimOp, VarDecl } from './L32-ast';
 import { isNumber, isArray, isString } from '../shared/type-predicates';
 import { append } from 'ramda';
 
-export type Value = SExpValue;
+export type DictValue = { tag: "DictValue"; map: Map<string, Value>; };
+
+export type Value = SExpValue | DictValue;
 
 export type Functional = PrimOp | Closure;
 export const isFunctional = (x: any): x is Functional => isPrimOp(x) || isClosure(x);
@@ -52,6 +54,9 @@ export const makeSymbolSExp = (val: string): SymbolSExp =>
     ({tag: "SymbolSExp", val: val});
 export const isSymbolSExp = (x: any): x is SymbolSExp => x.tag === "SymbolSExp";
 
+export const makeDictValue = (map: Map<string, Value>): DictValue => ({tag: "DictValue", map: map});
+export const isDictValue = (x: any): x is DictValue => x.tag === "DictValue";
+
 // LitSExp are equivalent to JSON - they can be parsed and read as literal values
 // like SExp except that non functional values (PrimOp and Closures) can be embedded at any level.
 export type LitSExp = number | boolean | string | SymbolSExp | EmptySExp | CompoundSExp;
@@ -80,4 +85,5 @@ export const valueToString = (val: Value): string =>
     isSymbolSExp(val) ? val.val :
     isEmptySExp(val) ? "'()" :
     isCompoundSExp(val) ? compoundSExpToString(val) :
+    isDictValue(val) ? `#<dict>` :
     val;
