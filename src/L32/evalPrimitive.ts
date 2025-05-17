@@ -1,6 +1,6 @@
 import { reduce } from "ramda";
 import { PrimOp } from "./L32-ast";
-import { isCompoundSExp,SExpValue, isEmptySExp, isSymbolSExp, makeCompoundSExp, makeEmptySExp, CompoundSExp,isSExp, EmptySExp, Value } from "./L32-value";
+import { isCompoundSExp,SExpValue, isEmptySExp, isSymbolSExp, makeCompoundSExp, makeEmptySExp, CompoundSExp,isSExp, EmptySExp, Value , makeDictValue, DictValue} from "./L32-value";
 import { List, allT, first, isNonEmptyList, rest } from '../shared/list';
 import { isBoolean, isNumber, isString } from "../shared/type-predicates";
 import { Result, makeOk, makeFailure } from "../shared/result";
@@ -36,6 +36,29 @@ export const applyPrimitive = (proc: PrimOp, args: Value[]): Result<Value> =>
     proc.op === "boolean?" ? makeOk(typeof (args[0]) === 'boolean') :
     proc.op === "symbol?" ? makeOk(isSymbolSExp(args[0])) :
     proc.op === "string?" ? makeOk(isString(args[0])) :
+    proc.op === "dict" ?
+  // expects exactly one quoted association‐list SExpValue
+  args.length === 1 && isSExp(args[0])
+    ? (() => {
+        const alist = args[0] as SExpValue;
+        const pairs: [string, Value][] = [];
+        let curr: SExpValue = alist;
+        // walk the list of dotted pairs
+        while (!isEmptySExp(curr)) {
+          if (!isCompoundSExp(curr))
+            return makeFailure(`dict expects a proper list, got ${format(curr)}`);
+          const pairS = curr.val1;
+          if (!isCompoundSExp(pairS) || !isSymbolSExp(pairS.val1))
+            return makeFailure(`dict expects dotted pairs, got ${format(pairS)}`);
+          const key = pairS.val1.val;
+          const val = pairS.val2 as Value;
+          pairs.push([key, val]);
+          curr = curr.val2;
+        }
+        return makeOk(makeDictValue(new Map(pairs)));
+      })()
+    : makeFailure(`dict expects one quoted assoc-list, got: ${format(args)}`) :
+
     makeFailure(`Bad primitive op: ${format(proc.op)}`);
 
 const minusPrim = (args: Value[]): Result<number> => {
